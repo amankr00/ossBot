@@ -15,41 +15,53 @@ export default function App() {
   const liveTimerIntervalRef = useRef(null);
   const [tick, setTick] = useState(0);
 
-  const messagesContainerRef = useRef(null);
+  const messagesContainerRef = useRef(null); // still used to find elements visually
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const programmaticScrollRef = useRef(false);
 
+  // cleanup on unmount
   useEffect(() => {
     return () => {
-      if (typingIntervalRef.current) clearInterval(typingIntervalRef.current);
-      if (fetchControllerRef.current) {
-        try { fetchControllerRef.current.abort(); } catch {}
+      if (typingIntervalRef.current) {
+        clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
       }
-      if (liveTimerIntervalRef.current) clearInterval(liveTimerIntervalRef.current);
+      if (fetchControllerRef.current) {
+        try {
+          fetchControllerRef.current.abort();
+        } catch {}
+        fetchControllerRef.current = null;
+      }
+      if (liveTimerIntervalRef.current) {
+        clearInterval(liveTimerIntervalRef.current);
+        liveTimerIntervalRef.current = null;
+      }
     };
   }, []);
 
   const pushMessage = (m) => setMessages((prev) => [...prev, m]);
 
-  // scroll helpers
+  // ---------- window-based scroll helpers (document scroll) ----------
   const scrollTo = (top, smooth = true) => {
-    const c = messagesContainerRef.current;
-    if (!c) return;
     programmaticScrollRef.current = true;
     try {
-      c.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+      window.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
     } catch {
-      c.scrollTop = top;
+      window.scrollTo(0, top);
     }
+    // small delay to avoid treating the subsequent scroll event as user scroll:
     setTimeout(() => (programmaticScrollRef.current = false), 600);
   };
 
   const scrollToBottom = (smooth = true) => {
-    const c = messagesContainerRef.current;
-    if (!c) return;
-    scrollTo(c.scrollHeight - c.clientHeight, smooth);
+    const target = Math.max(
+      0,
+      document.documentElement.scrollHeight - window.innerHeight
+    );
+    scrollTo(target, smooth);
   };
 
+  // Ensure a specific message element is visible (works on document scroll)
   const ensureMessageVisibleIfNeeded = (msgId, thresholdPx = 40) => {
     if (!autoScrollEnabled) return;
     const container = messagesContainerRef.current;
@@ -57,22 +69,21 @@ export default function App() {
     const el = container.querySelector(`[data-msgid="${msgId}"]`);
     if (!el) return;
 
-    const elTop = el.offsetTop;
-    const elBottom = elTop + el.offsetHeight;
-    const visibleBottom = container.scrollTop + container.clientHeight;
-    const gap = visibleBottom - elBottom;
-
-    if (gap < thresholdPx) {
-      const target = Math.max(0, elBottom - container.clientHeight + thresholdPx);
-      scrollTo(target, true);
+    const rect = el.getBoundingClientRect();
+    const visibleBottom = window.innerHeight;
+    // If bottom of element is below visible bottom minus threshold, scroll down
+    if (rect.bottom > visibleBottom - thresholdPx) {
+      const delta = rect.bottom - (visibleBottom - thresholdPx) + 12;
+      scrollTo(window.scrollY + delta, true);
+    } else if (rect.top < thresholdPx) {
+      // If element top is above threshold (scrolled past top), scroll up
+      const deltaUp = thresholdPx - rect.top + 12;
+      scrollTo(Math.max(0, window.scrollY - deltaUp), true);
     }
   };
 
-  // detect user scroll
+  // ---------- detect user scroll on window/document ----------
   useEffect(() => {
-    const container = messagesContainerRef.current;
-    if (!container) return;
-
     const onUserAction = () => {
       if (programmaticScrollRef.current) return;
       setAutoScrollEnabled(false);
@@ -80,29 +91,30 @@ export default function App() {
 
     const onScroll = () => {
       if (programmaticScrollRef.current) return;
-      const c = container;
-      const distanceFromBottom = c.scrollHeight - (c.scrollTop + c.clientHeight);
+      const distanceFromBottom =
+        document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
       setAutoScrollEnabled(distanceFromBottom < 50);
     };
 
-    container.addEventListener("wheel", onUserAction, { passive: true });
-    container.addEventListener("touchstart", onUserAction, { passive: true });
-    container.addEventListener("pointerdown", onUserAction, { passive: true });
-    container.addEventListener("mousedown", onUserAction, { passive: true });
-    container.addEventListener("scroll", onScroll, { passive: true });
+    window.addEventListener("wheel", onUserAction, { passive: true });
+    window.addEventListener("touchstart", onUserAction, { passive: true });
+    window.addEventListener("pointerdown", onUserAction, { passive: true });
+    window.addEventListener("mousedown", onUserAction, { passive: true });
+    window.addEventListener("scroll", onScroll, { passive: true });
 
     return () => {
-      container.removeEventListener("wheel", onUserAction);
-      container.removeEventListener("touchstart", onUserAction);
-      container.removeEventListener("pointerdown", onUserAction);
-      container.removeEventListener("mousedown", onUserAction);
-      container.removeEventListener("scroll", onScroll);
+      window.removeEventListener("wheel", onUserAction);
+      window.removeEventListener("touchstart", onUserAction);
+      window.removeEventListener("pointerdown", onUserAction);
+      window.removeEventListener("mousedown", onUserAction);
+      window.removeEventListener("scroll", onScroll);
     };
   }, []);
 
-  // scroll when done
+  // scroll to bottom after messages update if allowed
   useEffect(() => {
     if (!isStreaming && autoScrollEnabled) {
+      // short delay so layout updates (images / fonts) can settle
       setTimeout(() => scrollToBottom(true), 40);
     }
   }, [messages.length, isStreaming, autoScrollEnabled]);
@@ -115,7 +127,7 @@ export default function App() {
     return `${pad(mins)} mins ${pad(secs)} secs`;
   };
 
-  // sending logic
+  // ---------- sending logic (unchanged behavior but window-scroll aware) ----------
   const handleSend = async () => {
     if (isStreaming) {
       stopStreamingAndReveal();
@@ -133,7 +145,10 @@ export default function App() {
     activeBotIdRef.current = botId;
     const start = Date.now();
 
-    if (liveTimerIntervalRef.current) clearInterval(liveTimerIntervalRef.current);
+    if (liveTimerIntervalRef.current) {
+      clearInterval(liveTimerIntervalRef.current);
+      liveTimerIntervalRef.current = null;
+    }
     liveTimerIntervalRef.current = setInterval(() => setTick(Date.now()), 500);
 
     pushMessage({
@@ -148,6 +163,7 @@ export default function App() {
       responseTimeMs: null,
     });
 
+    // Instead of scrolling an inner container, scroll the page if allowed
     setTimeout(() => {
       if (autoScrollEnabled) scrollToBottom(true);
       else ensureMessageVisibleIfNeeded(botId, 40);
@@ -156,7 +172,10 @@ export default function App() {
     setIsStreaming(true);
 
     if (fetchControllerRef.current) {
-      try { fetchControllerRef.current.abort(); } catch {}
+      try {
+        fetchControllerRef.current.abort();
+      } catch {}
+      fetchControllerRef.current = null;
     }
     fetchControllerRef.current = new AbortController();
     const signal = fetchControllerRef.current.signal;
@@ -176,7 +195,10 @@ export default function App() {
       const hasResponse = Boolean(responseText && responseText.trim());
       const responseTimeMs = Date.now() - start;
 
-      if (liveTimerIntervalRef.current) clearInterval(liveTimerIntervalRef.current);
+      if (liveTimerIntervalRef.current) {
+        clearInterval(liveTimerIntervalRef.current);
+        liveTimerIntervalRef.current = null;
+      }
 
       setMessages((prev) =>
         prev.map((m) =>
@@ -203,9 +225,7 @@ export default function App() {
         startTypingReveal(botId, thinkingText, "thinking", () => {
           if (hasResponse && activeBotIdRef.current === botId) {
             setMessages((prev) =>
-              prev.map((m) =>
-                m.id === botId ? { ...m, status: "streaming-response", responseText: "" } : m
-              )
+              prev.map((m) => (m.id === botId ? { ...m, status: "streaming-response", responseText: "" } : m))
             );
             startTypingReveal(botId, responseText, "response", () => finalizeBotDone(botId));
           } else {
@@ -216,7 +236,10 @@ export default function App() {
         startTypingReveal(botId, responseText || "No response", "response", () => finalizeBotDone(botId));
       }
     } catch (err) {
-      if (liveTimerIntervalRef.current) clearInterval(liveTimerIntervalRef.current);
+      if (liveTimerIntervalRef.current) {
+        clearInterval(liveTimerIntervalRef.current);
+        liveTimerIntervalRef.current = null;
+      }
       if (err && err.name === "AbortError") {
         finalizeActiveBotAsDone();
         return;
@@ -224,7 +247,7 @@ export default function App() {
       console.error("Fetch error:", err);
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === botId ? { ...m, responseText: "Error: failed to fetch response.", status: "done" } : m
+          m.id === botId ? { ...m, responseText: "Error: failed to fetch response.", status: "done", responseTimeMs: m.startTime ? Date.now() - m.startTime : 0 } : m
         )
       );
       setIsStreaming(false);
@@ -240,7 +263,10 @@ export default function App() {
   function startTypingReveal(botId, fullText, phase, onComplete) {
     let i = 0;
     const speed = 22;
-    if (typingIntervalRef.current) clearInterval(typingIntervalRef.current);
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
 
     typingIntervalRef.current = setInterval(() => {
       i++;
@@ -256,6 +282,7 @@ export default function App() {
       if (autoScrollEnabled) ensureMessageVisibleIfNeeded(botId, 40);
       if (i >= fullText.length) {
         clearInterval(typingIntervalRef.current);
+        typingIntervalRef.current = null;
         if (onComplete) onComplete();
       }
     }, speed);
@@ -264,22 +291,62 @@ export default function App() {
   function stopStreamingAndReveal() {
     const botId = activeBotIdRef.current;
     if (fetchControllerRef.current) {
-      try { fetchControllerRef.current.abort(); } catch {}
+      try {
+        fetchControllerRef.current.abort();
+      } catch {}
+      fetchControllerRef.current = null;
     }
-    if (typingIntervalRef.current) clearInterval(typingIntervalRef.current);
-    if (liveTimerIntervalRef.current) clearInterval(liveTimerIntervalRef.current);
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+    if (liveTimerIntervalRef.current) {
+      clearInterval(liveTimerIntervalRef.current);
+      liveTimerIntervalRef.current = null;
+    }
     if (!botId) {
       setIsStreaming(false);
       return;
     }
-    setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, status: "done" } : m)));
+
+    const now = Date.now();
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === botId
+          ? {
+              ...m,
+              status: "done",
+              responseTimeMs:
+                m.responseTimeMs != null ? m.responseTimeMs : m.startTime != null ? Math.max(0, now - m.startTime) : 0,
+            }
+          : m
+      )
+    );
+
     setIsStreaming(false);
     activeBotIdRef.current = null;
     if (autoScrollEnabled) setTimeout(() => scrollToBottom(true), 50);
   }
 
   function finalizeBotDone(botId) {
-    setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, status: "done" } : m)));
+    const now = Date.now();
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === botId
+          ? {
+              ...m,
+              status: "done",
+              responseTimeMs: m.responseTimeMs != null ? m.responseTimeMs : m.startTime != null ? Math.max(0, now - m.startTime) : 0,
+            }
+          : m
+      )
+    );
+
+    if (liveTimerIntervalRef.current) {
+      clearInterval(liveTimerIntervalRef.current);
+      liveTimerIntervalRef.current = null;
+    }
+
     setIsStreaming(false);
     activeBotIdRef.current = null;
     if (autoScrollEnabled) setTimeout(() => scrollToBottom(true), 80);
@@ -291,15 +358,32 @@ export default function App() {
       setIsStreaming(false);
       return;
     }
-    if (typingIntervalRef.current) clearInterval(typingIntervalRef.current);
-    if (liveTimerIntervalRef.current) clearInterval(liveTimerIntervalRef.current);
-    setMessages((prev) => prev.map((m) => (m.id === botId ? { ...m, status: "done" } : m)));
+    if (typingIntervalRef.current) {
+      clearInterval(typingIntervalRef.current);
+      typingIntervalRef.current = null;
+    }
+    if (liveTimerIntervalRef.current) {
+      clearInterval(liveTimerIntervalRef.current);
+      liveTimerIntervalRef.current = null;
+    }
+    const now = Date.now();
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === botId
+          ? {
+              ...m,
+              status: "done",
+              responseTimeMs: m.responseTimeMs != null ? m.responseTimeMs : m.startTime != null ? Math.max(0, now - m.startTime) : 0,
+            }
+          : m
+      )
+    );
     setIsStreaming(false);
     activeBotIdRef.current = null;
     if (autoScrollEnabled) setTimeout(() => scrollToBottom(true), 80);
   }
 
-  // render
+  // ---------- render ----------
   const renderMessages = () =>
     messages.map((m) => {
       const isUser = m.sender === "user";
@@ -388,9 +472,13 @@ export default function App() {
       );
     });
 
+  // layout: central panel + bottom fixed input.
+  // IMPORTANT: add bottom padding to page so last messages not obscured by input
   return (
-    <div style={{ minHeight: "100vh", background: "#0d0d0f" }}>
+    <div style={{ minHeight: "100vh", background: "#0d0d0f", paddingBottom: 140 }}>
       <div style={{ width: "70vw", marginLeft: "15vw", marginRight: "15vw", paddingTop: 28 }}>
+        {/* central chat panel: full viewport height so it visually occupies the screen,
+            but it does NOT have its own scroll (overflow visible) so the page scrolls. */}
         <div
           ref={messagesContainerRef}
           style={{
@@ -398,8 +486,8 @@ export default function App() {
             flexDirection: "column",
             gap: 10,
             width: "100%",
-            height: "calc(100vh - 260px)",
-            overflowY: "auto",
+            height: "100vh",
+            overflow: "visible", // allow page to scroll
             paddingRight: 8,
           }}
         >
@@ -425,7 +513,17 @@ export default function App() {
         )}
       </div>
 
-      <div className="fixed-chat" style={{ position: "fixed", bottom: 30, left: "15vw", width: "70vw", zIndex: 1000 }}>
+      {/* Chat input fixed to bottom, high z-index so it's always above */}
+      <div
+        className="fixed-chat"
+        style={{
+          position: "fixed",
+          bottom: 30,
+          left: "15vw",
+          width: "70vw",
+          zIndex: 9999,
+        }}
+      >
         <ChatInput prompt={prompt} setPrompt={setPrompt} handleSend={handleSend} isStreaming={isStreaming} />
       </div>
     </div>
