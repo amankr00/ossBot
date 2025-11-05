@@ -15,11 +15,10 @@ export default function App() {
   const liveTimerIntervalRef = useRef(null);
   const [tick, setTick] = useState(0);
 
-  const messagesContainerRef = useRef(null); // still used to find elements visually
+  const messagesContainerRef = useRef(null); // used to find message elements visually
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const programmaticScrollRef = useRef(false);
 
-  // cleanup on unmount
   useEffect(() => {
     return () => {
       if (typingIntervalRef.current) {
@@ -41,7 +40,7 @@ export default function App() {
 
   const pushMessage = (m) => setMessages((prev) => [...prev, m]);
 
-  // ---------- window-based scroll helpers (document scroll) ----------
+  // ---------- scrolling helpers (document-level scrolling) ----------
   const scrollTo = (top, smooth = true) => {
     programmaticScrollRef.current = true;
     try {
@@ -49,40 +48,47 @@ export default function App() {
     } catch {
       window.scrollTo(0, top);
     }
-    // small delay to avoid treating the subsequent scroll event as user scroll:
+    // small delay to avoid treating this as a user action
     setTimeout(() => (programmaticScrollRef.current = false), 600);
   };
 
   const scrollToBottom = (smooth = true) => {
-    const target = Math.max(
-      0,
-      document.documentElement.scrollHeight - window.innerHeight
-    );
+    const target = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
     scrollTo(target, smooth);
   };
 
-  // Ensure a specific message element is visible (works on document scroll)
+  // Scroll a particular element so that its bottom is visible just above the fixed input area.
+  function scrollElementJustAboveInput(el, inputReservePx = 140, smooth = true) {
+    if (!el) {
+      scrollToBottom(smooth);
+      return;
+    }
+    const rect = el.getBoundingClientRect();
+    // distance from top of viewport to element bottom
+    const elementBottomViewport = rect.bottom;
+    // the y (in viewport coords) we want the element bottom to be at:
+    // window.innerHeight - inputReservePx (so it's just above input)
+    const desiredBottomViewport = window.innerHeight - inputReservePx;
+    const delta = elementBottomViewport - desiredBottomViewport;
+    if (Math.abs(delta) < 1) return; // already in good place
+
+    const targetY = Math.max(0, window.scrollY + delta);
+    scrollTo(targetY, smooth);
+  }
+
+  // Ensure a message is visible (wrapper that uses the above)
   const ensureMessageVisibleIfNeeded = (msgId, thresholdPx = 40) => {
     if (!autoScrollEnabled) return;
     const container = messagesContainerRef.current;
     if (!container) return;
     const el = container.querySelector(`[data-msgid="${msgId}"]`);
     if (!el) return;
-
-    const rect = el.getBoundingClientRect();
-    const visibleBottom = window.innerHeight;
-    // If bottom of element is below visible bottom minus threshold, scroll down
-    if (rect.bottom > visibleBottom - thresholdPx) {
-      const delta = rect.bottom - (visibleBottom - thresholdPx) + 12;
-      scrollTo(window.scrollY + delta, true);
-    } else if (rect.top < thresholdPx) {
-      // If element top is above threshold (scrolled past top), scroll up
-      const deltaUp = thresholdPx - rect.top + 12;
-      scrollTo(Math.max(0, window.scrollY - deltaUp), true);
-    }
+    // Reserve space for the input area + some margin (adjust if your ChatInput height differs)
+    const reserve = 140;
+    scrollElementJustAboveInput(el, reserve, true);
   };
 
-  // ---------- detect user scroll on window/document ----------
+  // ---------- detect user scroll (document) ----------
   useEffect(() => {
     const onUserAction = () => {
       if (programmaticScrollRef.current) return;
@@ -111,12 +117,31 @@ export default function App() {
     };
   }, []);
 
-  // scroll to bottom after messages update if allowed
+  // ---------- improved autoscroll behavior ----------
+  // Only auto-scroll to bottom if last message is a bot message (and not streaming).
+  // If the last message is a user message, scroll just enough to show that user message
+  // above the input (so the user can immediately see what they posted).
   useEffect(() => {
-    if (!isStreaming && autoScrollEnabled) {
-      // short delay so layout updates (images / fonts) can settle
-      setTimeout(() => scrollToBottom(true), 40);
-    }
+    if (!autoScrollEnabled || messages.length === 0) return;
+
+    const last = messages[messages.length - 1];
+    if (!last) return;
+
+    // let layout settle first (images/fonts/DOM)
+    setTimeout(() => {
+      if (last.sender === "user") {
+        // scroll so user's message is visible above the input, not snapped to absolute bottom
+        ensureMessageVisibleIfNeeded(last.id, 140);
+      } else {
+        // last sender is bot
+        if (!isStreaming) {
+          scrollToBottom(true);
+        } else {
+          // if streaming, keep last bot element visible while streaming
+          ensureMessageVisibleIfNeeded(last.id, 140);
+        }
+      }
+    }, 40);
   }, [messages.length, isStreaming, autoScrollEnabled]);
 
   const formatMsToMinSec = (ms) => {
@@ -127,7 +152,7 @@ export default function App() {
     return `${pad(mins)} mins ${pad(secs)} secs`;
   };
 
-  // ---------- sending logic (unchanged behavior but window-scroll aware) ----------
+  // ---------- sending logic (preserved) ----------
   const handleSend = async () => {
     if (isStreaming) {
       stopStreamingAndReveal();
@@ -137,7 +162,9 @@ export default function App() {
     const trimmed = prompt.trim();
     if (!trimmed) return;
 
+    // push user message first
     pushMessage({ id: uid("u_"), sender: "user", text: trimmed, status: "done" });
+
     setPrompt("");
     setShowTitle(false);
 
@@ -163,10 +190,18 @@ export default function App() {
       responseTimeMs: null,
     });
 
-    // Instead of scrolling an inner container, scroll the page if allowed
     setTimeout(() => {
-      if (autoScrollEnabled) scrollToBottom(true);
-      else ensureMessageVisibleIfNeeded(botId, 40);
+      // When message(s) added, the useEffect above will decide how to scroll.
+      // We still call ensureMessageVisibleIfNeeded for the bot entry so it doesn't hide.
+      if (autoScrollEnabled) {
+        // prefer to make the newly-added user message visible
+        const lastUser = messagesContainerRef.current?.querySelector(`[data-msgid^="u_"]:last-of-type`);
+        if (lastUser) scrollElementJustAboveInput(lastUser, 140, true);
+        else scrollToBottom(true);
+      } else {
+        // respect user scroll; still ensure bot is visible a bit if possible
+        ensureMessageVisibleIfNeeded(botId, 140);
+      }
     }, 40);
 
     setIsStreaming(true);
@@ -279,7 +314,7 @@ export default function App() {
             : m
         )
       );
-      if (autoScrollEnabled) ensureMessageVisibleIfNeeded(botId, 40);
+      if (autoScrollEnabled) ensureMessageVisibleIfNeeded(botId, 140);
       if (i >= fullText.length) {
         clearInterval(typingIntervalRef.current);
         typingIntervalRef.current = null;
@@ -472,13 +507,10 @@ export default function App() {
       );
     });
 
-  // layout: central panel + bottom fixed input.
-  // IMPORTANT: add bottom padding to page so last messages not obscured by input
+  // layout: central panel (full viewport height visually) + bottom fixed input.
   return (
     <div style={{ minHeight: "100vh", background: "#0d0d0f", paddingBottom: 140 }}>
       <div style={{ width: "70vw", marginLeft: "15vw", marginRight: "15vw", paddingTop: 28 }}>
-        {/* central chat panel: full viewport height so it visually occupies the screen,
-            but it does NOT have its own scroll (overflow visible) so the page scrolls. */}
         <div
           ref={messagesContainerRef}
           style={{
@@ -487,7 +519,7 @@ export default function App() {
             gap: 10,
             width: "100%",
             height: "100vh",
-            overflow: "visible", // allow page to scroll
+            overflow: "visible",
             paddingRight: 8,
           }}
         >
@@ -513,7 +545,6 @@ export default function App() {
         )}
       </div>
 
-      {/* Chat input fixed to bottom, high z-index so it's always above */}
       <div
         className="fixed-chat"
         style={{
