@@ -1,14 +1,49 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState } from "react";
 import { FaArrowUp, FaStop } from "react-icons/fa";
 
 export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming = false }) {
   const taRef = useRef(null);
+  const [phSize, setPhSize] = useState(16);
 
+  // Adjust height dynamically based on content
   useEffect(() => {
     adjustHeight();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [prompt]);
 
+  // Responsive placeholder text resizing
+  useEffect(() => {
+    const updatePlaceholderSize = () => {
+      const ta = taRef.current;
+      if (!ta) return;
+      const width = ta.clientWidth;
+      const threshold = 520; // start shrinking below this width
+      const maxFont = 16;
+      const minFont = 12;
+
+      if (width >= threshold) setPhSize(maxFont);
+      else {
+        const scaled = (width / threshold) * maxFont;
+        setPhSize(Math.max(minFont, Math.round(scaled)));
+      }
+    };
+
+    updatePlaceholderSize();
+
+    let ro;
+    if (window.ResizeObserver && taRef.current) {
+      ro = new ResizeObserver(updatePlaceholderSize);
+      ro.observe(taRef.current);
+    } else {
+      window.addEventListener("resize", updatePlaceholderSize);
+    }
+
+    return () => {
+      if (ro) ro.disconnect();
+      else window.removeEventListener("resize", updatePlaceholderSize);
+    };
+  }, []);
+
+  // Handle textarea height adjustment
   const adjustHeight = () => {
     const ta = taRef.current;
     if (!ta) return;
@@ -32,6 +67,8 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
     }
   };
 
+  const placeholderText = isStreaming ? "press red button to stop" : "Type your message...";
+
   return (
     <div
       style={{
@@ -45,11 +82,23 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
         boxShadow: "0 6px 22px rgba(0,0,0,0.35)",
       }}
     >
+      {/* Placeholder styling (responsive + single-line) */}
+      <style>{`
+        .chat-ta::placeholder {
+          font-size: ${phSize}px;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          opacity: 0.85;
+        }
+      `}</style>
+
       <textarea
         ref={taRef}
+        className="chat-ta"
         value={prompt}
         onChange={(e) => setPrompt(e.target.value)}
-        placeholder={isStreaming ? "Bot is responding... (press Send to stop)" : "Type your message..."}
+        placeholder={placeholderText}
         onKeyDown={onKeyDown}
         rows={1}
         style={{
@@ -67,28 +116,32 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
           minHeight: "20px",
           maxHeight: "200px",
           boxSizing: "border-box",
+          overflowX: "hidden", // 🚫 disables horizontal scroll
+          overflowWrap: "break-word", // breaks long words instead of scrolling
+          wordBreak: "break-word",
         }}
       />
 
+      {/* Send / Stop button */}
       <button
         onClick={handleSend}
-        title={isStreaming ? "Stop response" : "Send"}
+        title={isStreaming ? "Stop" : "Send"}
         style={{
-          marginLeft: 10,
-          border: "none",
-          borderRadius: "50%",
+          marginLeft: 8,
           width: 44,
           height: 44,
+          borderRadius: 22,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
+          border: "none",
+          background: isStreaming ? "#ff4d4d" : "#0a84ff",
+          color: "#fff",
           cursor: "pointer",
-          background: isStreaming ? "#ff4d4f" : "linear-gradient(135deg,#0a84ff,#0066cc)",
-          boxShadow: "0 6px 18px rgba(10,132,255,0.12)",
           flexShrink: 0,
         }}
       >
-        {isStreaming ? <FaStop color="#fff" /> : <FaArrowUp color="#fff" />}
+        {isStreaming ? <FaStop /> : <FaArrowUp />}
       </button>
     </div>
   );
