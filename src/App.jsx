@@ -29,6 +29,9 @@ export default function App() {
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const programmaticScrollRef = useRef(false);
 
+  // throttle last scroll timestamp (prevents vibrating)
+  const lastScrollTsRef = useRef(0);
+
   // enforce consistent background
   useEffect(() => {
     const bg = "#0d0d0f";
@@ -89,50 +92,58 @@ export default function App() {
   const pushMessage = (m) => setMessages((prev) => [...prev, m]);
 
   // ---------- inner scroll helpers ----------
-  const scrollInnerToBottom = (smooth = true) => {
+  // behavior: "smooth" or "auto"
+  const scrollInnerToBottom = (behavior = "smooth") => {
     const c = scrollContainerRef.current;
     if (!c) return;
     programmaticScrollRef.current = true;
     try {
-      c.scrollTo({ top: c.scrollHeight, behavior: smooth ? "smooth" : "auto" });
+      c.scrollTo({ top: c.scrollHeight, behavior });
     } catch {
       c.scrollTop = c.scrollHeight;
     }
-    // short timeout to avoid treating this programmatic scroll as user scroll
-    setTimeout(() => (programmaticScrollRef.current = false), 200);
+    setTimeout(() => (programmaticScrollRef.current = false), behavior === "smooth" ? 300 : 120);
   };
 
   // ensure an element is visible in the inner scroll container with a bottom gap
-  const ensureInnerElementVisible = (el, gap = GAP_ABOVE_INPUT) => {
+  // options: { behavior: "smooth"|"auto", minInterval: number }
+  const ensureInnerElementVisible = (el, options = {}) => {
+    const { behavior = "smooth", minInterval = 80 } = options;
     const c = scrollContainerRef.current;
     if (!c || !el) return;
+
+    // throttle: don't scroll more often than minInterval ms
+    const now = Date.now();
+    if (now - lastScrollTsRef.current < minInterval) return;
+    lastScrollTsRef.current = now;
+
     const elTop = el.offsetTop;
     const elBottom = elTop + el.offsetHeight;
     const viewTop = c.scrollTop;
     const viewHeight = c.clientHeight;
     const viewBottom = viewTop + viewHeight;
 
-    // We want the element bottom to sit at least `gap` px above the panel's bottom visual area.
-    // Inside the container, just ensure elementBottom <= viewBottom - gapInternal.
-    const gapInternal = Math.max(12, gap); // small padding
+    // internal padding to keep the element comfortably visible
+    const gapInternal = Math.max(12, GAP_ABOVE_INPUT);
+
     if (elBottom > viewBottom - gapInternal) {
       const target = elBottom - viewHeight + gapInternal;
       programmaticScrollRef.current = true;
       try {
-        c.scrollTo({ top: target, behavior: "smooth" });
+        c.scrollTo({ top: target, behavior });
       } catch {
         c.scrollTop = target;
       }
-      setTimeout(() => (programmaticScrollRef.current = false), 200);
-    } else if (elTop < viewTop) {
-      const target = Math.max(0, elTop - 12);
+      setTimeout(() => (programmaticScrollRef.current = false), behavior === "smooth" ? 300 : 120);
+    } else if (elTop < viewTop + 8) {
+      const target = Math.max(0, elTop - 8);
       programmaticScrollRef.current = true;
       try {
-        c.scrollTo({ top: target, behavior: "smooth" });
+        c.scrollTo({ top: target, behavior });
       } catch {
         c.scrollTop = target;
       }
-      setTimeout(() => (programmaticScrollRef.current = false), 200);
+      setTimeout(() => (programmaticScrollRef.current = false), behavior === "smooth" ? 300 : 120);
     }
   };
 
@@ -168,15 +179,15 @@ export default function App() {
       if (!last) return;
       if (last.sender === "user") {
         const el = c.querySelector(`[data-msgid="${last.id}"]`);
-        if (el) ensureInnerElementVisible(el);
-        else scrollInnerToBottom(true);
+        if (el) ensureInnerElementVisible(el, { behavior: "smooth", minInterval: 80 });
+        else scrollInnerToBottom("smooth");
       } else {
         // bot
-        if (!isStreaming) scrollInnerToBottom(true);
+        if (!isStreaming) scrollInnerToBottom("smooth");
         else {
           const el = c.querySelector(`[data-msgid="${last.id}"]`);
-          if (el) ensureInnerElementVisible(el);
-          else scrollInnerToBottom(true);
+          if (el) ensureInnerElementVisible(el, { behavior: "auto", minInterval: 80 }); // typing -> auto
+          else scrollInnerToBottom("auto");
         }
       }
     }, 40);
@@ -233,8 +244,8 @@ export default function App() {
       const c = scrollContainerRef.current;
       if (!c) return;
       const el = c.querySelector(`[data-msgid="${userId}"]`);
-      if (el && autoScrollEnabled) ensureInnerElementVisible(el);
-      else if (autoScrollEnabled) scrollInnerToBottom(true);
+      if (el && autoScrollEnabled) ensureInnerElementVisible(el, { behavior: "smooth", minInterval: 80 });
+      else if (autoScrollEnabled) scrollInnerToBottom("smooth");
     }, 40);
 
     setIsStreaming(true);
@@ -336,6 +347,8 @@ export default function App() {
       typingIntervalRef.current = null;
     }
 
+    // During typing we avoid very frequent smooth scrolls to prevent vibration.
+    // We'll only attempt an instant ("auto") scroll every ~80ms and when needed.
     typingIntervalRef.current = setInterval(() => {
       i++;
       setMessages((prev) =>
@@ -347,16 +360,28 @@ export default function App() {
             : m
         )
       );
+
       if (autoScrollEnabled) {
-        // keep the bot message visible inside the inner container
         const c = scrollContainerRef.current;
         const el = c ? c.querySelector(`[data-msgid="${botId}"]`) : null;
-        if (el) ensureInnerElementVisible(el);
+        if (el) {
+          // use instant scroll during typing to avoid smooth animation jitter
+          ensureInnerElementVisible(el, { behavior: "auto", minInterval: 80 });
+        }
       }
+
       if (i >= fullText.length) {
         clearInterval(typingIntervalRef.current);
         typingIntervalRef.current = null;
-        if (onComplete) onComplete();
+        // after typing completes, do a smooth final scroll so it settles nicely
+        if (autoScrollEnabled) {
+          setTimeout(() => {
+            scrollInnerToBottom("smooth");
+            if (onComplete) onComplete();
+          }, 40);
+        } else {
+          if (onComplete) onComplete();
+        }
       }
     }, speed);
   }
@@ -397,7 +422,7 @@ export default function App() {
 
     setIsStreaming(false);
     activeBotIdRef.current = null;
-    if (autoScrollEnabled) scrollInnerToBottom(true);
+    if (autoScrollEnabled) scrollInnerToBottom("smooth");
   }
 
   function finalizeBotDone(botId) {
@@ -421,7 +446,7 @@ export default function App() {
 
     setIsStreaming(false);
     activeBotIdRef.current = null;
-    if (autoScrollEnabled) scrollInnerToBottom(true);
+    if (autoScrollEnabled) scrollInnerToBottom("smooth");
   }
 
   function finalizeActiveBotAsDone() {
@@ -452,7 +477,7 @@ export default function App() {
     );
     setIsStreaming(false);
     activeBotIdRef.current = null;
-    if (autoScrollEnabled) scrollInnerToBottom(true);
+    if (autoScrollEnabled) scrollInnerToBottom("smooth");
   }
 
   // ---------- render messages ----------
