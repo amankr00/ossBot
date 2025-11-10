@@ -3,6 +3,11 @@ import ChatInput from "./components/ChatInput";
 
 const uid = (prefix = "") => `${prefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
+// layout constants — keep them in sync with your CSS for the input wrapper
+const CHAT_INPUT_BOTTOM = 30; // matches `bottom: 30px` on the fixed input wrapper
+const GAP_ABOVE_INPUT = 20; // the 20px gap you want between chat panel and input
+const TOP_PADDING = 28;
+
 export default function App() {
   const [prompt, setPrompt] = useState("");
   const [messages, setMessages] = useState([]);
@@ -15,15 +20,62 @@ export default function App() {
   const liveTimerIntervalRef = useRef(null);
   const [tick, setTick] = useState(0);
 
-  const messagesContainerRef = useRef(null); // used to find message elements visually
+  const panelRef = useRef(null); // fixed panel (visual column)
+  const scrollContainerRef = useRef(null); // inner scrolling container for messages
+  const chatInputWrapperRef = useRef(null); // fixed chat input wrapper (measured)
+  const [chatInputHeight, setChatInputHeight] = useState(0);
+
+  // autoscroll control
   const [autoScrollEnabled, setAutoScrollEnabled] = useState(true);
   const programmaticScrollRef = useRef(false);
 
+  // enforce consistent background
+  useEffect(() => {
+    const bg = "#0d0d0f";
+    try {
+      document.documentElement.style.background = bg;
+      document.body.style.background = bg;
+    } catch {}
+  }, []);
+
+  // measure chat input wrapper height to compute panel bottom
+  useEffect(() => {
+    const measure = () => {
+      const el = chatInputWrapperRef.current;
+      if (!el) return;
+      const h = Math.ceil(el.getBoundingClientRect().height);
+      setChatInputHeight(h);
+    };
+
+    measure();
+    let ro;
+    if (window.ResizeObserver && chatInputWrapperRef.current) {
+      ro = new ResizeObserver(measure);
+      ro.observe(chatInputWrapperRef.current);
+    } else {
+      window.addEventListener("resize", measure);
+    }
+    return () => {
+      if (ro) {
+        try {
+          ro.disconnect();
+        } catch {}
+      } else {
+        window.removeEventListener("resize", measure);
+      }
+    };
+  }, []);
+
+  // cleanup intervals/fetch controller on unmount
   useEffect(() => {
     return () => {
       if (typingIntervalRef.current) {
         clearInterval(typingIntervalRef.current);
         typingIntervalRef.current = null;
+      }
+      if (liveTimerIntervalRef.current) {
+        clearInterval(liveTimerIntervalRef.current);
+        liveTimerIntervalRef.current = null;
       }
       if (fetchControllerRef.current) {
         try {
@@ -31,118 +83,104 @@ export default function App() {
         } catch {}
         fetchControllerRef.current = null;
       }
-      if (liveTimerIntervalRef.current) {
-        clearInterval(liveTimerIntervalRef.current);
-        liveTimerIntervalRef.current = null;
-      }
     };
   }, []);
 
   const pushMessage = (m) => setMessages((prev) => [...prev, m]);
 
-  // ---------- scrolling helpers (document-level scrolling) ----------
-  const scrollTo = (top, smooth = true) => {
+  // ---------- inner scroll helpers ----------
+  const scrollInnerToBottom = (smooth = true) => {
+    const c = scrollContainerRef.current;
+    if (!c) return;
     programmaticScrollRef.current = true;
     try {
-      window.scrollTo({ top, behavior: smooth ? "smooth" : "auto" });
+      c.scrollTo({ top: c.scrollHeight, behavior: smooth ? "smooth" : "auto" });
     } catch {
-      window.scrollTo(0, top);
+      c.scrollTop = c.scrollHeight;
     }
-    // small delay to avoid treating this as a user action
-    setTimeout(() => (programmaticScrollRef.current = false), 600);
+    // short timeout to avoid treating this programmatic scroll as user scroll
+    setTimeout(() => (programmaticScrollRef.current = false), 200);
   };
 
-  const scrollToBottom = (smooth = true) => {
-    const target = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
-    scrollTo(target, smooth);
-  };
+  // ensure an element is visible in the inner scroll container with a bottom gap
+  const ensureInnerElementVisible = (el, gap = GAP_ABOVE_INPUT) => {
+    const c = scrollContainerRef.current;
+    if (!c || !el) return;
+    const elTop = el.offsetTop;
+    const elBottom = elTop + el.offsetHeight;
+    const viewTop = c.scrollTop;
+    const viewHeight = c.clientHeight;
+    const viewBottom = viewTop + viewHeight;
 
-  // Scroll a particular element so that its bottom is visible just above the fixed input area.
-  function scrollElementJustAboveInput(el, inputReservePx = 140, smooth = true) {
-    if (!el) {
-      scrollToBottom(smooth);
-      return;
+    // We want the element bottom to sit at least `gap` px above the panel's bottom visual area.
+    // Inside the container, just ensure elementBottom <= viewBottom - gapInternal.
+    const gapInternal = Math.max(12, gap); // small padding
+    if (elBottom > viewBottom - gapInternal) {
+      const target = elBottom - viewHeight + gapInternal;
+      programmaticScrollRef.current = true;
+      try {
+        c.scrollTo({ top: target, behavior: "smooth" });
+      } catch {
+        c.scrollTop = target;
+      }
+      setTimeout(() => (programmaticScrollRef.current = false), 200);
+    } else if (elTop < viewTop) {
+      const target = Math.max(0, elTop - 12);
+      programmaticScrollRef.current = true;
+      try {
+        c.scrollTo({ top: target, behavior: "smooth" });
+      } catch {
+        c.scrollTop = target;
+      }
+      setTimeout(() => (programmaticScrollRef.current = false), 200);
     }
-    const rect = el.getBoundingClientRect();
-    // distance from top of viewport to element bottom
-    const elementBottomViewport = rect.bottom;
-    // the y (in viewport coords) we want the element bottom to be at:
-    // window.innerHeight - inputReservePx (so it's just above input)
-    const desiredBottomViewport = window.innerHeight - inputReservePx;
-    const delta = elementBottomViewport - desiredBottomViewport;
-    if (Math.abs(delta) < 1) return; // already in good place
-
-    const targetY = Math.max(0, window.scrollY + delta);
-    scrollTo(targetY, smooth);
-  }
-
-  // Ensure a message is visible (wrapper that uses the above)
-  const ensureMessageVisibleIfNeeded = (msgId, thresholdPx = 40) => {
-    if (!autoScrollEnabled) return;
-    const container = messagesContainerRef.current;
-    if (!container) return;
-    const el = container.querySelector(`[data-msgid="${msgId}"]`);
-    if (!el) return;
-    // Reserve space for the input area + some margin (adjust if your ChatInput height differs)
-    const reserve = 140;
-    scrollElementJustAboveInput(el, reserve, true);
   };
 
-  // ---------- detect user scroll (document) ----------
+  // detect user scroll in the inner container to disable auto-scroll
   useEffect(() => {
-    const onUserAction = () => {
+    const c = scrollContainerRef.current;
+    if (!c) return;
+    const onUserScroll = () => {
       if (programmaticScrollRef.current) return;
       setAutoScrollEnabled(false);
     };
-
-    const onScroll = () => {
-      if (programmaticScrollRef.current) return;
-      const distanceFromBottom =
-        document.documentElement.scrollHeight - (window.scrollY + window.innerHeight);
-      setAutoScrollEnabled(distanceFromBottom < 50);
-    };
-
-    window.addEventListener("wheel", onUserAction, { passive: true });
-    window.addEventListener("touchstart", onUserAction, { passive: true });
-    window.addEventListener("pointerdown", onUserAction, { passive: true });
-    window.addEventListener("mousedown", onUserAction, { passive: true });
-    window.addEventListener("scroll", onScroll, { passive: true });
+    c.addEventListener("wheel", onUserScroll, { passive: true });
+    c.addEventListener("touchstart", onUserScroll, { passive: true });
+    c.addEventListener("pointerdown", onUserScroll, { passive: true });
+    c.addEventListener("mousedown", onUserScroll, { passive: true });
 
     return () => {
-      window.removeEventListener("wheel", onUserAction);
-      window.removeEventListener("touchstart", onUserAction);
-      window.removeEventListener("pointerdown", onUserAction);
-      window.removeEventListener("mousedown", onUserAction);
-      window.removeEventListener("scroll", onScroll);
+      c.removeEventListener("wheel", onUserScroll);
+      c.removeEventListener("touchstart", onUserScroll);
+      c.removeEventListener("pointerdown", onUserScroll);
+      c.removeEventListener("mousedown", onUserScroll);
     };
-  }, []);
+  }, [scrollContainerRef.current]);
 
-  // ---------- improved autoscroll behavior ----------
-  // Only auto-scroll to bottom if last message is a bot message (and not streaming).
-  // If the last message is a user message, scroll just enough to show that user message
-  // above the input (so the user can immediately see what they posted).
+  // when messages change, auto-scroll the inner container only if enabled
   useEffect(() => {
-    if (!autoScrollEnabled || messages.length === 0) return;
+    const c = scrollContainerRef.current;
+    if (!c) return;
+    if (!autoScrollEnabled) return;
 
-    const last = messages[messages.length - 1];
-    if (!last) return;
-
-    // let layout settle first (images/fonts/DOM)
     setTimeout(() => {
+      const last = messages[messages.length - 1];
+      if (!last) return;
       if (last.sender === "user") {
-        // scroll so user's message is visible above the input, not snapped to absolute bottom
-        ensureMessageVisibleIfNeeded(last.id, 140);
+        const el = c.querySelector(`[data-msgid="${last.id}"]`);
+        if (el) ensureInnerElementVisible(el);
+        else scrollInnerToBottom(true);
       } else {
-        // last sender is bot
-        if (!isStreaming) {
-          scrollToBottom(true);
-        } else {
-          // if streaming, keep last bot element visible while streaming
-          ensureMessageVisibleIfNeeded(last.id, 140);
+        // bot
+        if (!isStreaming) scrollInnerToBottom(true);
+        else {
+          const el = c.querySelector(`[data-msgid="${last.id}"]`);
+          if (el) ensureInnerElementVisible(el);
+          else scrollInnerToBottom(true);
         }
       }
     }, 40);
-  }, [messages.length, isStreaming, autoScrollEnabled]);
+  }, [messages.length, isStreaming, autoScrollEnabled, chatInputHeight]);
 
   const formatMsToMinSec = (ms) => {
     const totalSeconds = Math.floor(ms / 1000);
@@ -152,22 +190,22 @@ export default function App() {
     return `${pad(mins)} mins ${pad(secs)} secs`;
   };
 
-  // ---------- sending logic (preserved) ----------
+  // ---------- sending logic (kept intact) ----------
   const handleSend = async () => {
     if (isStreaming) {
       stopStreamingAndReveal();
       return;
     }
-
     const trimmed = prompt.trim();
     if (!trimmed) return;
 
-    // push user message first
-    pushMessage({ id: uid("u_"), sender: "user", text: trimmed, status: "done" });
-
+    // add user message
+    const userId = uid("u_");
+    pushMessage({ id: userId, sender: "user", text: trimmed, status: "done" });
     setPrompt("");
     setShowTitle(false);
 
+    // prepare bot message placeholder
     const botId = uid("b_");
     activeBotIdRef.current = botId;
     const start = Date.now();
@@ -190,18 +228,13 @@ export default function App() {
       responseTimeMs: null,
     });
 
+    // ensure newly-added user message is visible in inner container
     setTimeout(() => {
-      // When message(s) added, the useEffect above will decide how to scroll.
-      // We still call ensureMessageVisibleIfNeeded for the bot entry so it doesn't hide.
-      if (autoScrollEnabled) {
-        // prefer to make the newly-added user message visible
-        const lastUser = messagesContainerRef.current?.querySelector(`[data-msgid^="u_"]:last-of-type`);
-        if (lastUser) scrollElementJustAboveInput(lastUser, 140, true);
-        else scrollToBottom(true);
-      } else {
-        // respect user scroll; still ensure bot is visible a bit if possible
-        ensureMessageVisibleIfNeeded(botId, 140);
-      }
+      const c = scrollContainerRef.current;
+      if (!c) return;
+      const el = c.querySelector(`[data-msgid="${userId}"]`);
+      if (el && autoScrollEnabled) ensureInnerElementVisible(el);
+      else if (autoScrollEnabled) scrollInnerToBottom(true);
     }, 40);
 
     setIsStreaming(true);
@@ -314,7 +347,12 @@ export default function App() {
             : m
         )
       );
-      if (autoScrollEnabled) ensureMessageVisibleIfNeeded(botId, 140);
+      if (autoScrollEnabled) {
+        // keep the bot message visible inside the inner container
+        const c = scrollContainerRef.current;
+        const el = c ? c.querySelector(`[data-msgid="${botId}"]`) : null;
+        if (el) ensureInnerElementVisible(el);
+      }
       if (i >= fullText.length) {
         clearInterval(typingIntervalRef.current);
         typingIntervalRef.current = null;
@@ -351,8 +389,7 @@ export default function App() {
           ? {
               ...m,
               status: "done",
-              responseTimeMs:
-                m.responseTimeMs != null ? m.responseTimeMs : m.startTime != null ? Math.max(0, now - m.startTime) : 0,
+              responseTimeMs: m.responseTimeMs != null ? m.responseTimeMs : m.startTime != null ? Math.max(0, now - m.startTime) : 0,
             }
           : m
       )
@@ -360,7 +397,7 @@ export default function App() {
 
     setIsStreaming(false);
     activeBotIdRef.current = null;
-    if (autoScrollEnabled) setTimeout(() => scrollToBottom(true), 50);
+    if (autoScrollEnabled) scrollInnerToBottom(true);
   }
 
   function finalizeBotDone(botId) {
@@ -384,7 +421,7 @@ export default function App() {
 
     setIsStreaming(false);
     activeBotIdRef.current = null;
-    if (autoScrollEnabled) setTimeout(() => scrollToBottom(true), 80);
+    if (autoScrollEnabled) scrollInnerToBottom(true);
   }
 
   function finalizeActiveBotAsDone() {
@@ -415,10 +452,10 @@ export default function App() {
     );
     setIsStreaming(false);
     activeBotIdRef.current = null;
-    if (autoScrollEnabled) setTimeout(() => scrollToBottom(true), 80);
+    if (autoScrollEnabled) scrollInnerToBottom(true);
   }
 
-  // ---------- render ----------
+  // ---------- render messages ----------
   const renderMessages = () =>
     messages.map((m) => {
       const isUser = m.sender === "user";
@@ -468,7 +505,6 @@ export default function App() {
                 </div>
               ) : null}
 
-              {/* 🕒 Timer (always visible bottom-left) */}
               <div
                 style={{
                   position: "absolute",
@@ -507,49 +543,67 @@ export default function App() {
       );
     });
 
-  // layout: central panel (full viewport height visually) + bottom fixed input.
+  // compute the fixed panel bottom in px: equals input height + bottom offset + gap
+  const panelBottom = chatInputHeight + CHAT_INPUT_BOTTOM + GAP_ABOVE_INPUT;
+
+  // inner container paddingBottom so last element never underlaps input
+  const innerPaddingBottom = chatInputHeight + GAP_ABOVE_INPUT + 12;
+
   return (
-    <div style={{ minHeight: "100vh", background: "#0d0d0f", paddingBottom: 140 }}>
-      <div style={{ width: "70vw", marginLeft: "15vw", marginRight: "15vw", paddingTop: 28 }}>
+    <div style={{ minHeight: "100vh", background: "#0d0d0f", color: "#ddd" }}>
+      {/* fixed central panel positioned between top padding and panelBottom above input */}
+      <div
+        ref={panelRef}
+        style={{
+          position: "fixed",
+          top: TOP_PADDING,
+          left: "15vw",
+          width: "70vw",
+          bottom: panelBottom,
+          overflow: "hidden", // inner scroll container handles scroll
+          display: "flex",
+          flexDirection: "column",
+          paddingRight: 8,
+          boxSizing: "border-box",
+        }}
+      >
+        {/* inner scrollable container */}
         <div
-          ref={messagesContainerRef}
+          ref={scrollContainerRef}
           style={{
+            overflowY: "auto",
+            paddingBottom: innerPaddingBottom,
             display: "flex",
             flexDirection: "column",
             gap: 10,
-            width: "100%",
-            height: "100vh",
-            overflow: "visible",
-            paddingRight: 8,
+            minHeight: 0,
           }}
         >
           {renderMessages()}
-        </div>
 
-        {showTitle && (
-          <h2
-            style={{
-              position: "fixed",
-              bottom: 300,
-              left: "15vw",
-              width: "70vw",
-              textAlign: "center",
-              color: "#ccc",
-              margin: 0,
-              fontFamily: "sans-serif",
-              letterSpacing: 1,
-            }}
-          >
-            NSBOT IS HERE TO ASSIST YOU
-          </h2>
-        )}
+          {/* Title shown centered when no messages and showTitle true */}
+          {messages.length === 0 && showTitle && (
+            <h2
+              style={{
+                textAlign: "center",
+                color: "#ccc",
+                marginTop: "30vh",
+                fontFamily: "sans-serif",
+                letterSpacing: 1,
+              }}
+            >
+              NSBOT IS HERE TO ASSIST YOU
+            </h2>
+          )}
+        </div>
       </div>
 
+      {/* fixed chat input wrapper (measured) */}
       <div
-        className="fixed-chat"
+        ref={chatInputWrapperRef}
         style={{
           position: "fixed",
-          bottom: 30,
+          bottom: CHAT_INPUT_BOTTOM,
           left: "15vw",
           width: "70vw",
           zIndex: 9999,
