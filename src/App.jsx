@@ -1,5 +1,7 @@
+// src/App.jsx
 import React, { useState, useRef, useEffect } from "react";
 import ChatInput from "./components/ChatInput";
+import MixedResponseRenderer from "./components/MixedResponseRenderer";
 
 const uid = (prefix = "") => `${prefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
@@ -267,7 +269,7 @@ export default function App() {
     const signal = fetchControllerRef.current.signal;
 
     try {
-      const resp = await fetch("https://llmoss.duckdns.org/prompt", {
+      const resp = await fetch("http://localhost:3000/prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ givePrompt: trimmed }),
@@ -537,7 +539,32 @@ export default function App() {
               {m.status === "streaming-response" || m.status === "done" ? (
                 <div>
                   <div style={{ fontSize: 12, color: "#6ef08a", marginBottom: 6 }}>Response:</div>
-                  <div>{m.responseText}</div>
+
+                  {/* Render the response: try JSON -> structured renderer, otherwise plain text */}
+                  <div>
+                    {(() => {
+                      const txt = (m.responseText ?? "").toString();
+                      // Try to detect JSON inside the response (either raw JSON or a JSON block)
+                      try {
+                        // attempt parse directly
+                        const parsed = JSON.parse(txt);
+                        return <MixedResponseRenderer response={parsed} />;
+                      } catch (e) {
+                        // sometimes LLM wraps JSON inside code fences or extra text; try to extract first JSON object
+                        const jsonMatch = txt.match(/(\{[\s\S]*\}|\[[\s\S]*\])/m);
+                        if (jsonMatch) {
+                          try {
+                            const parsed2 = JSON.parse(jsonMatch[0]);
+                            return <MixedResponseRenderer response={parsed2} />;
+                          } catch (e2) {
+                            // fallthrough to plain text
+                          }
+                        }
+                        // plain fallback: show possibly long text but keep line breaks
+                        return <div style={{ whiteSpace: "pre-wrap", color: "#e6e6e6" }}>{txt}</div>;
+                      }
+                    })()}
+                  </div>
                 </div>
               ) : null}
 
