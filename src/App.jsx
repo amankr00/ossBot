@@ -269,7 +269,7 @@ export default function App() {
     const signal = fetchControllerRef.current.signal;
 
     try {
-      const resp = await fetch("http://localhost:3000/prompt", {
+      const resp = await fetch("https://nsbot.online/prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ givePrompt: trimmed }),
