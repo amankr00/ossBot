@@ -34,6 +34,9 @@ export default function App() {
   const [messages, setMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [showTitle, setShowTitle] = useState(true);
+  const [viewportWidth, setViewportWidth] = useState(() =>
+    typeof window === "undefined" ? 1200 : window.innerWidth
+  );
 
   // streaming / timers / control refs (kept from your original)
   const typingIntervalRef = useRef(null);
@@ -61,6 +64,13 @@ export default function App() {
     const bg = "#0d0d0f";
     document.documentElement.style.background = bg;
     document.body.style.background = bg;
+  }, []);
+
+  // viewport width for responsive layout
+  useEffect(() => {
+    const onResize = () => setViewportWidth(window.innerWidth);
+    window.addEventListener("resize", onResize, { passive: true });
+    return () => window.removeEventListener("resize", onResize);
   }, []);
 
   // measure input wrapper height (ResizeObserver)
@@ -107,6 +117,20 @@ export default function App() {
   }, []);
 
   const pushMessage = (m) => setMessages((prev) => [...prev, m]);
+
+  const isMobile = viewportWidth <= 768;
+  const isTablet = viewportWidth > 768 && viewportWidth <= 1100;
+
+  const inputBottom = isMobile ? 10 : CHAT_INPUT_BOTTOM;
+  const gapAboveInput = isMobile ? 12 : GAP_ABOVE_INPUT;
+  const topPadding = isMobile ? 10 : TOP_PADDING;
+
+  const panelLeft = isMobile ? "3vw" : isTablet ? "6vw" : "15vw";
+  const panelWidth = isMobile ? "94vw" : isTablet ? "88vw" : "70vw";
+  const panelRightPadding = isMobile ? 0 : 8;
+
+  const botBubbleMaxWidth = isMobile ? "93%" : isTablet ? "86%" : "80%";
+  const userBubbleMaxWidth = isMobile ? "90%" : isTablet ? "84%" : "78%";
 
   // ---------- scrolling helpers ----------
   const applyAutoScrollState = useCallback((enabled) => {
@@ -456,9 +480,9 @@ export default function App() {
           {!isUser ? (
             <div
               style={{
-                maxWidth: "80%",
-                padding: "16px 16px 40px 16px",
-                borderRadius: 16,
+                maxWidth: botBubbleMaxWidth,
+                padding: isMobile ? "12px 12px 36px 12px" : "16px 16px 40px 16px",
+                borderRadius: isMobile ? 14 : 16,
                 background: "#1e1e2f",
                 color: "#ddd",
                 whiteSpace: "pre-wrap",
@@ -473,12 +497,12 @@ export default function App() {
                     margin: 0,
                     whiteSpace: "pre-wrap",
                     color: "#e6e6e6",
-                    fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                    fontSize: 13,
-                    lineHeight: 1.45,
-                    overflowX: "auto",
-                  }}
-                >
+                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
+                  fontSize: isMobile ? 12 : 13,
+                  lineHeight: 1.45,
+                  overflowX: "auto",
+                }}
+              >
                   Waiting for backend response...
                 </pre>
               )}
@@ -492,7 +516,7 @@ export default function App() {
                     whiteSpace: "pre-wrap",
                     color: "#e6e6e6",
                     fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                    fontSize: 13,
+                    fontSize: isMobile ? 12 : 13,
                     lineHeight: 1.45,
                     overflowX: "auto",
                   }}
@@ -504,9 +528,9 @@ export default function App() {
               <div
                 style={{
                   position: "absolute",
-                  left: 14,
-                  bottom: 10,
-                  fontSize: 12,
+                  left: isMobile ? 10 : 14,
+                  bottom: isMobile ? 8 : 10,
+                  fontSize: isMobile ? 11 : 12,
                   color: "#aaa",
                   whiteSpace: "nowrap",
                   letterSpacing: "0.5px",
@@ -523,13 +547,14 @@ export default function App() {
           ) : (
             <div
               style={{
-                maxWidth: "78%",
-                padding: "12px 14px",
-                borderRadius: 14,
+                maxWidth: userBubbleMaxWidth,
+                padding: isMobile ? "10px 12px" : "12px 14px",
+                borderRadius: isMobile ? 12 : 14,
                 background: "linear-gradient(135deg,#0a84ff,#0066cc)",
                 color: "#fff",
                 whiteSpace: "pre-wrap",
                 boxShadow: "0 1px 2px rgba(0,0,0,0.2)",
+                fontSize: isMobile ? 14 : 15,
               }}
             >
               {m.text}
@@ -540,10 +565,10 @@ export default function App() {
     });
 
   // compute the fixed panel bottom in px: equals input height + bottom offset + gap
-  const panelBottom = chatInputHeight + CHAT_INPUT_BOTTOM + GAP_ABOVE_INPUT;
+  const panelBottom = chatInputHeight + inputBottom + gapAboveInput;
 
   // inner container paddingBottom so last element never underlaps input
-  const innerPaddingBottom = chatInputHeight + GAP_ABOVE_INPUT + 12;
+  const innerPaddingBottom = chatInputHeight + gapAboveInput + (isMobile ? 18 : 12);
   const showJumpToLatest = !autoScrollEnabled && messages.length > 0;
 
   return (
@@ -553,14 +578,14 @@ export default function App() {
         ref={panelRef}
         style={{
           position: "fixed",
-          top: TOP_PADDING,
-          left: "15vw",
-          width: "70vw",
-          bottom: panelBottom,
+          top: `calc(${topPadding}px + env(safe-area-inset-top))`,
+          left: panelLeft,
+          width: panelWidth,
+          bottom: `calc(${panelBottom}px + env(safe-area-inset-bottom))`,
           overflow: "hidden",
           display: "flex",
           flexDirection: "column",
-          paddingRight: 8,
+          paddingRight: panelRightPadding,
           boxSizing: "border-box",
         }}
       >
@@ -569,13 +594,15 @@ export default function App() {
           ref={scrollContainerRef}
           style={{
             overflowY: "auto",
-            paddingBottom: innerPaddingBottom,
+            paddingBottom: `calc(${innerPaddingBottom}px + env(safe-area-inset-bottom))`,
             display: "flex",
             flexDirection: "column",
             gap: 10,
             minHeight: 0,
             overscrollBehaviorY: "contain",
             overflowAnchor: "none",
+            paddingLeft: isMobile ? 2 : 0,
+            paddingRight: isMobile ? 2 : 0,
           }}
         >
           {renderMessages()}
@@ -584,18 +611,19 @@ export default function App() {
           {messages.length === 0 && showTitle && (
             <div
               style={{
-                marginTop: "22vh",
+                marginTop: isMobile ? "16vh" : "22vh",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "center",
-                gap: 18,
+                gap: isMobile ? 14 : 18,
+                padding: isMobile ? "0 12px" : 0,
               }}
             >
               <div
                 style={{
                   border: "1px solid #303148",
-                  borderRadius: 18,
-                  padding: 12,
+                  borderRadius: isMobile ? 14 : 18,
+                  padding: isMobile ? 9 : 12,
                   background: "linear-gradient(180deg, rgba(255,255,255,0.04), rgba(255,255,255,0.01))",
                   boxShadow: "0 10px 30px rgba(0,0,0,0.35), inset 0 0 0 1px rgba(255,255,255,0.04)",
                 }}
@@ -604,10 +632,10 @@ export default function App() {
                   src={nsAppsLogo}
                   alt="NS Apps Logo"
                   style={{
-                    width: "min(180px, 36vw)",
+                    width: isMobile ? "min(155px, 50vw)" : "min(180px, 36vw)",
                     height: "auto",
                     display: "block",
-                    borderRadius: 12,
+                    borderRadius: isMobile ? 10 : 12,
                     border: "1px solid #3b3f61",
                     background: "#11131d",
                   }}
@@ -621,6 +649,8 @@ export default function App() {
                   margin: 0,
                   fontFamily: "sans-serif",
                   letterSpacing: 1,
+                  fontSize: isMobile ? 18 : 24,
+                  lineHeight: 1.25,
                 }}
               >
                 NSBOT IS HERE TO ASSIST YOU
@@ -636,14 +666,14 @@ export default function App() {
             onClick={jumpToLatest}
             style={{
               position: "absolute",
-              right: 16,
-              bottom: 16,
+              right: isMobile ? 10 : 16,
+              bottom: isMobile ? 10 : 16,
               border: "none",
               borderRadius: 999,
               background: "#0a84ff",
               color: "#fff",
-              padding: "8px 14px",
-              fontSize: 13,
+              padding: isMobile ? "7px 12px" : "8px 14px",
+              fontSize: isMobile ? 12 : 13,
               fontWeight: 600,
               boxShadow: "0 6px 16px rgba(0,0,0,0.35)",
               cursor: "pointer",
@@ -659,13 +689,13 @@ export default function App() {
         ref={chatInputWrapperRef}
         style={{
           position: "fixed",
-          bottom: CHAT_INPUT_BOTTOM,
-          left: "15vw",
-          width: "70vw",
+          bottom: `calc(${inputBottom}px + env(safe-area-inset-bottom))`,
+          left: panelLeft,
+          width: panelWidth,
           zIndex: 9999,
         }}
       >
-        <ChatInput prompt={prompt} setPrompt={setPrompt} handleSend={handleSend} isStreaming={isStreaming} />
+        <ChatInput prompt={prompt} setPrompt={setPrompt} handleSend={handleSend} isStreaming={isStreaming} isMobile={isMobile} />
       </div>
     </div>
   );

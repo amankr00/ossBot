@@ -1,7 +1,7 @@
 import React, { useRef, useEffect, useState } from "react";
 import { FaArrowUp, FaStop } from "react-icons/fa";
 
-export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming = false }) {
+export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming = false, isMobile = false }) {
   const taRef = useRef(null);
   const [phSize, setPhSize] = useState(16);
 
@@ -75,8 +75,8 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
         display: "flex",
         alignItems: "center",
         backgroundColor: "#1e1e1e",
-        borderRadius: 50,
-        padding: "8px 12px",
+        borderRadius: isMobile ? 22 : 50,
+        padding: isMobile ? "6px 8px" : "8px 12px",
         boxSizing: "border-box",
         width: "100%",
         boxShadow: "0 6px 22px rgba(0,0,0,0.35)",
@@ -112,7 +112,7 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
           fontSize: 16,
           fontFamily: "sans-serif",
           lineHeight: "20px",
-          padding: "8px 10px",
+          padding: isMobile ? "8px 8px" : "8px 10px",
           minHeight: "20px",
           maxHeight: "200px",
           boxSizing: "border-box",
@@ -127,10 +127,10 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
         onClick={handleSend}
         title={isStreaming ? "Stop" : "Send"}
         style={{
-          marginLeft: 8,
-          width: 44,
-          height: 44,
-          borderRadius: 22,
+          marginLeft: isMobile ? 6 : 8,
+          width: isMobile ? 40 : 44,
+          height: isMobile ? 40 : 44,
+          borderRadius: isMobile ? 20 : 22,
           display: "flex",
           alignItems: "center",
           justifyContent: "center",
