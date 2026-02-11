@@ -2,6 +2,7 @@
 import React, { useState, useRef, useEffect, useLayoutEffect, useCallback } from "react";
 import ChatInput from "./components/ChatInput";
 import SmartResponseRenderer from "./components/SmartResponseRenderer";
+import ThinkingIndicator from "./components/ThinkingIndicator";
 import nsAppsLogo from "./assets/nsAppsLogo.svg";
 
 const uid = (prefix = "") => `${prefix}${Date.now()}${Math.floor(Math.random() * 1000)}`;
@@ -208,12 +209,12 @@ export default function App() {
     scrollInnerToBottom(true);
   }, [messages, isStreaming, chatInputHeight, autoScrollEnabled, scrollInnerToBottom]);
 
-  const formatMsToMinSec = (ms) => {
+  const formatMsCompact = (ms) => {
     const totalSeconds = Math.floor(ms / 1000);
     const mins = Math.floor(totalSeconds / 60);
     const secs = totalSeconds % 60;
     const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
-    return `${pad(mins)} mins ${pad(secs)} secs`;
+    return `${pad(mins)}:${pad(secs)}`;
   };
 
   // ---------- send / streaming logic ----------
@@ -491,23 +492,9 @@ export default function App() {
                 boxSizing: "border-box",
               }}
             >
-              {m.status === "waiting" && !m.responseText && (
-                <pre
-                  style={{
-                    margin: 0,
-                    whiteSpace: "pre-wrap",
-                    color: "#e6e6e6",
-                  fontFamily: "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace",
-                  fontSize: isMobile ? 12 : 13,
-                  lineHeight: 1.45,
-                  overflowX: "auto",
-                }}
-              >
-                  Waiting for backend response...
-                </pre>
-              )}
-
-              {m.status === "done" ? (
+              {m.status === "waiting" ? (
+                <ThinkingIndicator elapsedLabel={formatMsCompact(elapsedMs)} isMobile={isMobile} />
+              ) : m.status === "done" ? (
                 <SmartResponseRenderer data={m.responsePayload} rawText={m.responseFull || m.responseText || ""} />
               ) : (
                 <pre
@@ -525,24 +512,6 @@ export default function App() {
                 </pre>
               )}
 
-              <div
-                style={{
-                  position: "absolute",
-                  left: isMobile ? 10 : 14,
-                  bottom: isMobile ? 8 : 10,
-                  fontSize: isMobile ? 11 : 12,
-                  color: "#aaa",
-                  whiteSpace: "nowrap",
-                  letterSpacing: "0.5px",
-                  background: "rgba(0,0,0,0.25)",
-                  padding: "2px 6px",
-                  borderRadius: 8,
-                  backdropFilter: "blur(2px)",
-                  lineHeight: 1.2,
-                }}
-              >
-                ⏱ {formatMsToMinSec(elapsedMs)}
-              </div>
             </div>
           ) : (
             <div

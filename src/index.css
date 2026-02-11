@@ -41,6 +41,98 @@ body {
   overflow: hidden;
 }
 
+.thinking-shell {
+  border: 1px solid #303148;
+  background: linear-gradient(180deg, rgba(20, 22, 36, 0.92), rgba(16, 18, 30, 0.9));
+  border-radius: 14px;
+  padding: 12px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
+}
+
+.thinking-shell-mobile {
+  border-radius: 12px;
+  padding: 10px;
+}
+
+.thinking-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.thinking-orb-wrap {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+}
+
+.thinking-orb {
+  width: 22px;
+  height: 22px;
+  border-radius: 999px;
+  background: radial-gradient(circle at 30% 30%, #9fd5ff 0%, #3f8cff 44%, #1a4ed7 100%);
+  animation: thinkingPulse 1.35s ease-in-out infinite;
+}
+
+.thinking-orb-glow {
+  position: absolute;
+  inset: -4px;
+  border-radius: 999px;
+  border: 1px solid rgba(74, 141, 255, 0.38);
+  animation: thinkingHalo 1.35s ease-in-out infinite;
+}
+
+.thinking-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: #dbe5ff;
+  letter-spacing: 0.2px;
+}
+
+.thinking-time {
+  margin-top: 2px;
+  font-size: 12px;
+  color: #9fb2dd;
+}
+
+.thinking-wave {
+  margin-top: 10px;
+  display: flex;
+  align-items: flex-end;
+  gap: 5px;
+  height: 22px;
+}
+
+.thinking-wave span {
+  width: 4px;
+  height: 7px;
+  border-radius: 999px;
+  background: linear-gradient(180deg, #7fb8ff 0%, #2d6bff 100%);
+  opacity: 0.9;
+  animation: thinkingBars 0.95s ease-in-out infinite;
+}
+
+.thinking-wave span:nth-child(2) { animation-delay: 0.12s; }
+.thinking-wave span:nth-child(3) { animation-delay: 0.24s; }
+.thinking-wave span:nth-child(4) { animation-delay: 0.36s; }
+.thinking-wave span:nth-child(5) { animation-delay: 0.48s; }
+
+@keyframes thinkingPulse {
+  0%, 100% { transform: scale(0.9); }
+  50% { transform: scale(1); }
+}
+
+@keyframes thinkingHalo {
+  0%, 100% { opacity: 0.35; transform: scale(0.85); }
+  50% { opacity: 0.85; transform: scale(1.08); }
+}
+
+@keyframes thinkingBars {
+  0%, 100% { height: 7px; opacity: 0.55; }
+  50% { height: 22px; opacity: 1; }
+}
+
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
