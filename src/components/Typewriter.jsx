@@ -21,10 +21,9 @@ const Typewriter = ({ text = "", speed = 25, onComplete }) => {
     }, speed);
 
     return () => clearInterval(interval);
-  }, [text, speed]); // If the text or speed changes the useEffect will run again.
+  }, [text, speed, onComplete]); // If the text or speed changes the useEffect will run again.
 
   return <span>{displayedText}</span>;
 };
 
 export default Typewriter;
-
