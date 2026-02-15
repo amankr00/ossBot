@@ -4,8 +4,8 @@ import { FaArrowUp, FaStop } from "react-icons/fa";
 export default function ChatInput({
   prompt,
   setPrompt,
-  svNo,
-  setSvNo,
+  sbNo,
+  setSbNo,
   handleSend,
   isStreaming = false,
   isMobile = false,
@@ -68,7 +68,7 @@ export default function ChatInput({
     ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
   };
 
-  const canSend = isStreaming || (prompt.trim().length > 0 && String(svNo).trim().length > 0);
+  const canSend = isStreaming || (prompt.trim().length > 0 && String(sbNo).trim().length > 0);
 
   const onKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -140,10 +140,10 @@ export default function ChatInput({
         inputMode="numeric"
         min="0"
         step="1"
-        value={svNo}
-        onChange={(e) => setSvNo(e.target.value)}
+        value={sbNo}
+        onChange={(e) => setSbNo(e.target.value)}
         onKeyDown={onKeyDown}
-        placeholder="SV No."
+        placeholder="SB No."
         style={{
           width: isMobile ? 88 : 112,
           marginLeft: isMobile ? 6 : 8,
