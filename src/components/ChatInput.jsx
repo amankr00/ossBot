@@ -1,7 +1,15 @@
 import React, { useRef, useEffect, useState } from "react";
 import { FaArrowUp, FaStop } from "react-icons/fa";
 
-export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming = false, isMobile = false }) {
+export default function ChatInput({
+  prompt,
+  setPrompt,
+  svNo,
+  setSvNo,
+  handleSend,
+  isStreaming = false,
+  isMobile = false,
+}) {
   const taRef = useRef(null);
   const [phSize, setPhSize] = useState(16);
 
@@ -60,14 +68,19 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
     ta.style.overflowY = ta.scrollHeight > maxHeight ? "auto" : "hidden";
   };
 
+  const canSend = isStreaming || (prompt.trim().length > 0 && String(svNo).trim().length > 0);
+
   const onKeyDown = (e) => {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
+      if (!canSend) return;
       handleSend();
     }
   };
 
-  const placeholderText = isStreaming ? "press red button to stop" : "Type your message...";
+  const placeholderText = isStreaming
+    ? "press red button to stop"
+    : "Describe the your startup idea...";
 
   return (
     <div
@@ -122,9 +135,33 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
         }}
       />
 
+      <input
+        type="number"
+        inputMode="numeric"
+        min="0"
+        step="1"
+        value={svNo}
+        onChange={(e) => setSvNo(e.target.value)}
+        onKeyDown={onKeyDown}
+        placeholder="SV No."
+        style={{
+          width: isMobile ? 88 : 112,
+          marginLeft: isMobile ? 6 : 8,
+          background: "#2a2a2a",
+          border: "1px solid #40404f",
+          color: "#fff",
+          borderRadius: 12,
+          outline: "none",
+          fontSize: isMobile ? 13 : 14,
+          padding: isMobile ? "10px 8px" : "11px 10px",
+          boxSizing: "border-box",
+        }}
+      />
+
       {/* Send / Stop button */}
       <button
         onClick={handleSend}
+        disabled={!canSend}
         title={isStreaming ? "Stop" : "Send"}
         style={{
           marginLeft: isMobile ? 6 : 8,
@@ -135,9 +172,10 @@ export default function ChatInput({ prompt, setPrompt, handleSend, isStreaming =
           alignItems: "center",
           justifyContent: "center",
           border: "none",
-          background: isStreaming ? "#ff4d4d" : "#0a84ff",
+          background: isStreaming ? "#ff4d4d" : canSend ? "#0a84ff" : "#586174",
           color: "#fff",
-          cursor: "pointer",
+          cursor: canSend ? "pointer" : "not-allowed",
+          opacity: canSend ? 1 : 0.8,
           flexShrink: 0,
         }}
       >

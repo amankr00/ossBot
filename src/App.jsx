@@ -32,6 +32,7 @@ const TOP_PADDING = 28;
 
 export default function App() {
   const [prompt, setPrompt] = useState("");
+  const [svNo, setSvNo] = useState("");
   const [messages, setMessages] = useState([]);
   const [isStreaming, setIsStreaming] = useState(false);
   const [showTitle, setShowTitle] = useState(true);
@@ -225,13 +226,15 @@ export default function App() {
     }
 
     const trimmed = prompt.trim();
-    if (!trimmed) return;
+    const trimmedSvNo = String(svNo).trim();
+    if (!trimmed || !trimmedSvNo) return;
 
     userInterruptedAutoscrollRef.current = false;
     applyAutoScrollState(true);
     const userId = uid("u_");
-    pushMessage({ id: userId, sender: "user", text: trimmed, status: "done" });
+    pushMessage({ id: userId, sender: "user", text: `SV No: ${trimmedSvNo}\n${trimmed}`, status: "done" });
     setPrompt("");
+    setSvNo("");
     setShowTitle(false);
 
     const botId = uid("b_");
@@ -268,7 +271,7 @@ export default function App() {
       const resp = await fetch("https://nsbot.online/prompt", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ givePrompt: trimmed }),
+        body: JSON.stringify({ givePrompt: trimmed, svNo: trimmedSvNo }),
         signal,
       });
 
@@ -664,7 +667,15 @@ export default function App() {
           zIndex: 9999,
         }}
       >
-        <ChatInput prompt={prompt} setPrompt={setPrompt} handleSend={handleSend} isStreaming={isStreaming} isMobile={isMobile} />
+        <ChatInput
+          prompt={prompt}
+          setPrompt={setPrompt}
+          svNo={svNo}
+          setSvNo={setSvNo}
+          handleSend={handleSend}
+          isStreaming={isStreaming}
+          isMobile={isMobile}
+        />
       </div>
     </div>
   );
