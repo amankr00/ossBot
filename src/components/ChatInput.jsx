@@ -136,10 +136,8 @@ export default function ChatInput({
       />
 
       <input
-        type="number"
-        inputMode="numeric"
-        min="0"
-        step="1"
+        type="text"
+        inputMode="text"
         value={sbNo}
         onChange={(e) => setSbNo(e.target.value)}
         onKeyDown={onKeyDown}
